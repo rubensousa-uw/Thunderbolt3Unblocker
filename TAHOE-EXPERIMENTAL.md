@@ -1,9 +1,36 @@
 # Experimental Intel macOS investigation
 
-This branch is NOT a confirmed working Tahoe release. The Dell UP2715K through
-a StarTech TB32DP2 has not yet been tested with this build.
+This branch is NOT a fully working Tahoe release. Runtime patching and Dell
+UP2715K display output through a StarTech TB32DP2 have been confirmed after
+physically reconnecting the adapter. Detection while already connected at boot
+remains unresolved. Historical deployment notes below describe earlier stages.
 
 Observed host: iMac20,2, macOS 26.7.1 (25G241), Darwin 25.6.0.
+
+## Runtime result, 2026-10-05
+
+Loaded candidate: 1.1.0, UUID 9A24A07E-25A8-30A0-87D9-4E69E5C01B6E.
+Startup logs confirm `Patched IOThunderboltFamily`, and the candidate crash guard
+is absent after successful startup. The user confirmed display output after
+reconnecting, and reconnected the Kensington dock/storage afterwards.
+
+Cold-plug failure has a clear ordering problem in the observed boot:
+- 1.176571 seconds: `fullScan` enumerates `Startech.com TB32DP2 - Unsupported`.
+- 8.0805 seconds: Thunderbolt3Unblocker applies its patch.
+- After physical reconnect: the patched function is invoked, `fullScan`
+  enumerates the StarTech without `Unsupported`, and display output works.
+
+This ordering explains why the initial scan is not fixed retroactively by the
+current runtime patch. Upstream issue 75 reports the same symptom, and the
+author recommends attaching after reboot:
+https://github.com/rgov/Thunderbolt3Unblocker/issues/75#issuecomment-1023462214
+
+No supported targeted software re-enumeration API has been established. The
+presence of private `IOThunderboltController::startScan()` symbols is not a
+safe calling contract (threading, locking, lifetime and side effects are unknown).
+No private scan/reset calls, whole-controller resets, earlier boot injection or
+sealed-system patching have been implemented. The stable hot-plug build remains
+installed; cold-plug correction requires further investigation and live tests.
 The previous panic points at ZydisDecodeOperandRegister's register assertion.
 The installed original kext refuses to start because `t3u-incompatible` contains
 `25.6.0`. Merely seeing its bundle in the loaded-kext list does not mean its
