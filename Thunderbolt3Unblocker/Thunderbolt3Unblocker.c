@@ -23,13 +23,17 @@ int new_skip_enumeration(void) {
     return 0;
 }
 
+// Keep the legacy crash guard intact: rolling back must not re-enable the
+// original driver that already panicked. This candidate has its own guard.
+#define COMPATIBILITY_GUARD "t3u-incompatible-v11"
+
 
 static bool isSystemIncompatible(void) {
     char version[16];
     size_t len = sizeof(version) - 1;
     
     // Read the incompatibility NVRAM variable
-    int success = readNVRAMProperty("t3u-incompatible", version, &len);
+    int success = readNVRAMProperty(COMPATIBILITY_GUARD, version, &len);
     if (!success) {
         os_log_info(OS_LOG_DEFAULT, "Thunderbolt3Unblocker: No incompatibility info in NVRAM\n");
         return 0;
@@ -42,12 +46,13 @@ static bool isSystemIncompatible(void) {
     return strcmp(version, osrelease) == 0;
 }
 
-static void markSystemIncompatible(void) {
-    writeNVRAMProperty("t3u-incompatible", osrelease, (unsigned int)strlen(osrelease));
+static bool markSystemIncompatible(void) {
+    return writeNVRAMProperty(COMPATIBILITY_GUARD, osrelease,
+                             (unsigned int)strlen(osrelease)) && isSystemIncompatible();
 }
 
 static void unmarkSystemIncompatible(void) {
-    deleteNVRAMProperty("t3u-incompatible");
+    deleteNVRAMProperty(COMPATIBILITY_GUARD);
 }
 
 
@@ -60,7 +65,10 @@ kern_return_t Thunderbolt3Unblocker_start(kmod_info_t *ki, void *d)
     }
     
     // Mark the system is incompatible before we proceed
-    markSystemIncompatible();
+    if (!markSystemIncompatible()) {
+        os_log_error(OS_LOG_DEFAULT, "Thunderbolt3Unblocker: Cannot establish crash guard; refusing to patch\n");
+        return KERN_FAILURE;
+    }
     
     // Run a preflight sanity check
     kern_return_t err;

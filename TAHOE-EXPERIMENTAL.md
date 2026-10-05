@@ -53,6 +53,22 @@ to start. It protects against repeated panics. A correct deployment must replace
 and verify the candidate in the kernel collection before retrying its startup.
 Keep the compatibility guard logic enabled in this experimental build.
 
+The candidate now uses `t3u-incompatible-v11`, leaving the original
+`t3u-incompatible` key intact. It refuses to patch unless its own guard can be
+written and read back. A failed experimental startup therefore does not require
+clearing the original driver's crash guard. This is a safety change, not a
+guarantee of successful boot or display output.
+
+`tests/validate-kext.sh` creates an offline auxiliary collection only. The host
+successfully built that collection after installing KDK 26.7.1 (25G241).
+`tests/install-candidate.sh` must be run manually with administrator privileges;
+it repeats offline validation, checks the candidate UUID, preserves the original
+kext and auxiliary collection, stages the candidate and rebuilds the installed
+collections. It checks the staged UUID, attempts rollback on failure, and never
+loads a live driver, deletes NVRAM keys or restarts automatically. The updated
+guard's runtime behavior and the installation script remain untested at this
+point. Save work and arrange recovery before running it.
+
 On an Intel Mac, Shift at startup enters safe mode and Command-R enters Recovery:
 https://support.apple.com/en-us/102603
 Do not reset all NVRAM as a workaround: that also removes the crash guard.
