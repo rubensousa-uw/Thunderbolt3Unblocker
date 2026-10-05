@@ -1,6 +1,9 @@
 #!/bin/bash
 # Requires user-run sudo. Does not load a live driver or restart.
 set -euo pipefail
+echo 'Installer disabled: --update-all attempted writes to sealed system collections.' >&2
+echo 'Do not approve the pending security prompt or restart until installation state is reviewed.' >&2
+exit 1
 test "$(id -u)" -eq 0 || { echo 'Run with sudo in your own Terminal.' >&2; exit 1; }
 task_repo=$(cd "$(dirname "$0")/.." && pwd)
 task_source="$task_repo/build/manual/Thunderbolt3Unblocker.kext"
