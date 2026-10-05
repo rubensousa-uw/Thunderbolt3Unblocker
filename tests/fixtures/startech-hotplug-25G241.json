@@ -1,0 +1,30 @@
+{
+  "build": "25G241",
+  "driver_version": "1.1.0",
+  "capture_date": "2026-10-05",
+  "display_output": true,
+  "display_model": "DELL UP2715K",
+  "device": {
+    "Device Model Name": "TB32DP2",
+    "Device Vendor ID": 111,
+    "Device Model ID": 513,
+    "Route String": 1,
+    "IOServiceBusyState": 0,
+    "IOPowerManagement": {
+      "CapabilityFlags": 2,
+      "ChildrenPowerState": 2,
+      "CurrentPowerState": 2,
+      "DriverPowerState": 2,
+      "MaxPowerState": 2
+    },
+    "child_classes": [
+      "IOThunderboltIECSNub",
+      "IOThunderboltPort",
+      "IOThunderboltPort",
+      "IOThunderboltPort",
+      "IOThunderboltPort",
+      "IOThunderboltPort"
+    ]
+  },
+  "kernel_cpu_assertion_owner": null
+}

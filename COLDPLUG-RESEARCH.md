@@ -46,3 +46,19 @@ not, by itself, validate a private scan/reset call.
 Cold-plug repair remains unimplemented. No private kernel APIs, controller
 resets, new driver installation, startup automation or protected system-file
 changes have been performed in this investigation.
+
+## Paired live captures, 2026-10-05
+
+The paired fixtures in `tests/fixtures` record the observed states (without
+serial numbers). Both refer to the same build, driver version and route.
+Before reconnect: model name `TB32DP2 - Unsupported`, only IECS nub published,
+ChildrenPowerState 0, CurrentPowerState 2, controller CPU assertion held.
+After reconnect: model name `TB32DP2`, five additional ThunderboltPort children,
+ChildrenPowerState 2, CurrentPowerState still 2, controller CPU assertion absent.
+The Dell is confirmed online by SPDisplaysDataType after reconnect.
+
+The unchanged device power state and newly published ports support a missing
+enumeration/publication problem rather than simply an unpowered adapter.
+Changing the model-name property or power assertion alone would not create the
+missing ports/tunnels. A future fix must safely complete that lifecycle; these
+captures do not establish which private method can be called to do so.
