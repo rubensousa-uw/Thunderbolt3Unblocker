@@ -69,6 +69,18 @@ loads a live driver, deletes NVRAM keys or restarts automatically. The updated
 guard's runtime behavior and the installation script remain untested at this
 point. Save work and arrange recovery before running it.
 
+Deployment correction: the first live staging attempt used
+`kmutil install --update-all`, which attempted boot/system rebuilds and failed on
+the sealed read-only system volume. The original bundle was restored. The user
+confirmed that the current auxiliary collection and its pre-install backup had
+identical SHA-256 hashes. The installer was disabled while this was investigated.
+It now requests `kmutil rebuild`, the documented auxiliary-only rebuild managed
+by kernelmanagerd. It tolerates a pending approval without falsely claiming
+that the new UUID is already present, and does not silently roll bundle files
+back after a successful staging operation. No direct collection overwrite,
+sealed-volume modification or explicit live-load command is used. The corrected
+installation route still requires live verification by the user.
+
 On an Intel Mac, Shift at startup enters safe mode and Command-R enters Recovery:
 https://support.apple.com/en-us/102603
 Do not reset all NVRAM as a workaround: that also removes the crash guard.

@@ -1,9 +1,7 @@
 #!/bin/bash
-# Requires user-run sudo. Does not load a live driver or restart.
+# Requires user-run sudo. Requests only an auxiliary collection rebuild.
+# Does not explicitly start/load a live driver or restart.
 set -euo pipefail
-echo 'Installer disabled: --update-all attempted writes to sealed system collections.' >&2
-echo 'Do not approve the pending security prompt or restart until installation state is reviewed.' >&2
-exit 1
 test "$(id -u)" -eq 0 || { echo 'Run with sudo in your own Terminal.' >&2; exit 1; }
 task_repo=$(cd "$(dirname "$0")/.." && pwd)
 task_source="$task_repo/build/manual/Thunderbolt3Unblocker.kext"
@@ -49,8 +47,9 @@ rollback() {
             /bin/mv "$task_target" "$task_backup/FailedCandidate.kext"
         fi
         /bin/mv "$task_backup/Original.kext" "$task_target"
-        /usr/bin/kmutil install --volume-root / --update-all || \
-            echo "Collection rollback failed: do NOT reboot; backup at $task_backup" >&2
+        if ! /usr/bin/cmp -s "$task_aux" "$task_backup/OriginalAux.kc"; then
+            echo "Auxiliary collection changed: do NOT reboot; backup at $task_backup" >&2
+        fi
     fi
     exit "$task_result"
 }
@@ -59,10 +58,21 @@ trap rollback EXIT
 task_changed=1
 /usr/bin/ditto "$task_work/Candidate.kext" "$task_target"
 /usr/bin/codesign --verify --deep --strict "$task_target"
-/usr/bin/kmutil install --volume-root / --update-all
-/usr/bin/kmutil inspect --show-kext-uuids | /usr/bin/grep -F "$task_uuid"
+# Staging is complete. Approval/rebuild may be asynchronous; never roll files
+# back behind a pending approval, or claim the candidate is already installed.
 task_changed=0
-echo "Candidate staged and identity verified: $task_uuid"
+echo "Candidate bundle prepared: $task_uuid"
 echo "Original driver preserved: $task_backup/Original.kext"
-echo 'No NVRAM keys were deleted. No live driver was loaded. No restart performed.'
+echo 'Requesting an AUXILIARY collection rebuild only...'
+if ! /usr/bin/kmutil rebuild; then
+    echo 'Auxiliary rebuild request did not complete. Candidate bundle remains staged.' >&2
+    echo 'Do NOT restart. Send the complete output for review.' >&2
+    exit 1
+fi
+if /usr/bin/kmutil inspect --show-kext-uuids | /usr/bin/grep -F "$task_uuid"; then
+    echo 'Candidate UUID found in collection on disk; runtime remains untested.'
+else
+    echo 'Candidate not yet in collection. Approval/rebuild may still be pending.'
+fi
+echo 'No NVRAM keys were deleted. No explicit live-load request or restart performed.'
 echo 'Send this output for review BEFORE restarting.'
