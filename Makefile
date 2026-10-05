@@ -6,7 +6,7 @@ KEXT := $(OUT)/Thunderbolt3Unblocker.kext
 FLAGS := -arch x86_64 -mkernel -fno-builtin -fno-stack-protector -D_FORTIFY_SOURCE=0 -isysroot $(SDK) -I$(KH) -Ixnu_override -Ixnu_override/zydis/include -I$(OUT)/zydis
 CSRC := Thunderbolt3Unblocker/Thunderbolt3Unblocker.c xnu_override/xnu_override.c xnu_override/xnu_override_test.c xnu_override/zydis_stubs.c tests/kmod_entry.c
 OBJ := $(CSRC:%.c=$(OUT)/%.o) $(OUT)/NVRAM.o
-.PHONY: all test
+.PHONY: all test inspect-scan
 all: $(KEXT)/Contents/MacOS/Thunderbolt3Unblocker
 $(OUT)/%.o: %.c xnu_override/patch_decode.h $(OUT)/zydis/libZydis.a
 	mkdir -p $(dir $@)
@@ -28,3 +28,9 @@ test:
 	cmake --build build/zydis-debug -j4
 	clang -O0 -Ixnu_override/zydis/include -Ibuild/zydis-debug tests/patch_decode_test.c build/zydis-debug/libZydis.a -Wl,-w -o build/patch-decode-test
 	./build/patch-decode-test
+
+# Read-only analysis tool. Not linked into the kernel extension.
+build/disassemble-bytes: tests/disassemble_bytes.c build/zydis-debug/libZydis.a
+	clang -O0 -Ixnu_override/zydis/include -Ibuild/zydis-debug $< build/zydis-debug/libZydis.a -Wl,-w -o $@
+inspect-scan: build/disassemble-bytes
+	python3 tests/inspect_scan.py
