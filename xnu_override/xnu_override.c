@@ -17,6 +17,7 @@
 #include <Zydis/Zydis.h>
 
 #include "xnu_override.h"
+#include "patch_decode.h"
 
 
 #define LOG_PREFIX "xnu_override: "
@@ -118,6 +119,8 @@ static void enable_write_protection(void) {
 static BranchIsland *alloc_nx_island(void) {
     if (!tag)
         tag = OSMalloc_Tagalloc("branch_island", OSMT_DEFAULT);
+    if (!tag)
+        return NULL;
     return OSMalloc(sizeof(BranchIsland), tag);
 }
 
@@ -152,71 +155,18 @@ kern_return_t xnu_override(void *target, const void *replacement, void **origina
     os_log_debug(OS_LOG_DEFAULT, LOG_PREFIX "Creating branch island\n");
     
     BranchIsland *island = alloc_nx_island();
+    if (!island)
+        return KERN_RESOURCE_SHORTAGE;
     island->target = target;
     bcopy(kIslandTemplate, &island->instructions, sizeof(island->instructions));
     
-    // Now we will use the disassembler to copy instructions over one by one
-    // until we have enough room for our jump
-    ZydisDecoder decoder;
-    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
-  
-    island->insn_bytes = 0;
-    void *insn_ptr = &island->instructions;
-    while (island->insn_bytes < sizeof(kPatchTemplate)) {
-        ZydisStatus zerr;
-        ZydisDecodedInstruction instruction;
-        zerr = ZydisDecoderDecodeBuffer(
-            &decoder,
-            target + island->insn_bytes,
-            64, /* always assume there are 64 bytes left */
-            (uint64_t)target + island->insn_bytes,
-            &instruction
-        );
-        if (!ZYDIS_SUCCESS(zerr)) {
-            os_log_error(OS_LOG_DEFAULT, LOG_PREFIX "Cannot disassemble instruction, aborting: %d\n", zerr);
-            goto fail;
-        }
-        
-        // Detect whether the instruction touches %rip
-        bool accessesInstPtr = false;
-        for (int oi = 0; oi < instruction.operandCount; oi ++) {
-            /*
-             Due to a bug currently in Zydis, I cannot do
-                ZydisRegisterGetClass(x) == ZYDIS_REGCLASS_IP
-             which is a little bit nicer than comparing directly to RIP.
-             */
-            ZydisDecodedOperand *op = &instruction.operands[oi];
-            if (op->type == ZYDIS_OPERAND_TYPE_REGISTER) {
-                if (op->reg.value == ZYDIS_REGISTER_RIP) {
-                    accessesInstPtr = true;
-                    break;
-                }
-            } else if (op->type == ZYDIS_OPERAND_TYPE_MEMORY) {
-                if (op->mem.base == ZYDIS_REGISTER_RIP || op->mem.index == ZYDIS_REGISTER_RIP) {
-                    accessesInstPtr = true;
-                    break;
-                }
-            }
-        }
-        
-        if (accessesInstPtr) {
-            os_log_error(OS_LOG_DEFAULT, LOG_PREFIX "Encountered instruction that accesses instruction pointer, proceed with caution\n");
-            if (original != NULL) {
-                os_log_error(OS_LOG_DEFAULT, LOG_PREFIX "Calling original function will likely crash!\n");
-            }
-        }
-        
-        // Make sure we have enough room to proceed
-        island->insn_bytes += instruction.length;
-        if (island->insn_bytes > kOriginalInstructionsSize) {
-            os_log_error(OS_LOG_DEFAULT, LOG_PREFIX "Out of space in branch island, aborting\n");
-            goto fail;
-        }
-        
-        bcopy(instruction.data, insn_ptr, instruction.length);
-        insn_ptr += instruction.length;
+    // Validate the entire prologue before touching executable memory.
+    if (!patch_decode_length(target, kOriginalInstructionsSize,
+                             sizeof(kPatchTemplate), &island->insn_bytes)) {
+        os_log_error(OS_LOG_DEFAULT, LOG_PREFIX "Unsafe or undecodable prologue; refusing patch\n");
+        goto fail;
     }
-    
+    bcopy(target, island->instructions, island->insn_bytes);
     // Ok, the branch island is almost ready, we just need to insert the address
     // we want it to jump to, which will be the first instruction after the ones
     // we copied into the island.
@@ -224,7 +174,11 @@ kern_return_t xnu_override(void *target, const void *replacement, void **origina
     bcopy(&jumpTo, &island->instructions[kIslandJumpOffset], sizeof(uint64_t));
     
     // Move the island to the executable heap
-    island = move_island(island);
+    BranchIsland *executable = move_island(island);
+    OSFree(island, sizeof(BranchIsland), tag);
+    island = executable;
+    if (!island)
+        return KERN_RESOURCE_SHORTAGE;
     
     // Now we need to patch the target to insert a jump to the replacement code
     boolean_t ints = ml_set_interrupts_enabled(false);
@@ -248,7 +202,7 @@ kern_return_t xnu_override(void *target, const void *replacement, void **origina
     return KERN_SUCCESS;
     
 fail:
-    free_island(island);
+    OSFree(island, sizeof(BranchIsland), tag);
     return KERN_ABORTED;
 }
 

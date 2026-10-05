@@ -34,6 +34,8 @@ static bool isSystemIncompatible(void) {
         os_log_info(OS_LOG_DEFAULT, "Thunderbolt3Unblocker: No incompatibility info in NVRAM\n");
         return 0;
     }
+    if (len >= sizeof(version))
+        return true;
     version[len] = '\0';
     
     // Compare it to the OS version
